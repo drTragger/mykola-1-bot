@@ -36,6 +36,9 @@ const (
 	regRemainChgLo      = "0x2A"
 	regRemainChgHi      = "0x2B"
 
+	regFullCapLo = "0x2C"
+	regFullCapHi = "0x2D"
+
 	regCell1Lo = "0x30"
 	regCell1Hi = "0x31"
 	regCell2Lo = "0x32"
@@ -64,6 +67,7 @@ type UpsSnapshot struct {
 	BatteryCurrentMA int
 	BatteryPercent   int
 	RemainingMAh     int
+	FullCapacityMAh  int
 	RemainDisMin     int
 	RemainChgMin     int
 
@@ -137,6 +141,9 @@ func readUpsSnapshotRaw() (*UpsSnapshot, error) {
 	}
 	if s.RemainChgMin, err = readU16LE(regRemainChgLo, regRemainChgHi); err != nil {
 		return nil, err
+	}
+	if s.FullCapacityMAh, err = readU16LE(regFullCapLo, regFullCapHi); err != nil {
+		s.FullCapacityMAh = 0
 	}
 
 	if s.Cell1MV, err = readU16LE(regCell1Lo, regCell1Hi); err != nil {
@@ -233,15 +240,15 @@ func (s *UpsSnapshot) ChargePhase() string {
 	}
 }
 
+func (s *UpsSnapshot) IsFastCharging() bool {
+	return s.ChargeState&0x80 != 0
+}
+
 func (s *UpsSnapshot) ChargeDetailsText() string {
 	if s.IsFastCharging() {
 		return s.ChargePhase() + " (швидка)"
 	}
 	return s.ChargePhase()
-}
-
-func (s *UpsSnapshot) IsFastCharging() bool {
-	return s.ChargeState&0x80 != 0
 }
 
 func (s *UpsSnapshot) BatteryVoltageV() float64 {
@@ -265,19 +272,19 @@ func (s *UpsSnapshot) VBUSPowerW() float64 {
 }
 
 func (s *UpsSnapshot) CellDeltaMV() int {
-	min := s.Cell1MV
-	max := s.Cell1MV
+	minV := s.Cell1MV
+	maxV := s.Cell1MV
 
 	for _, v := range []int{s.Cell2MV, s.Cell3MV, s.Cell4MV} {
-		if v < min {
-			min = v
+		if v < minV {
+			minV = v
 		}
-		if v > max {
-			max = v
+		if v > maxV {
+			maxV = v
 		}
 	}
 
-	return max - min
+	return maxV - minV
 }
 
 func (s *UpsSnapshot) CellDeltaText() string {
@@ -302,7 +309,7 @@ func (s *UpsSnapshot) ETALabel() string {
 	if s.Charging() {
 		return "До повної зарядки"
 	}
-	return "—"
+	return "Стан"
 }
 
 func (s *UpsSnapshot) ETAString() string {
@@ -312,25 +319,7 @@ func (s *UpsSnapshot) ETAString() string {
 	if s.Charging() {
 		return formatMinutesSmart(s.RemainChgMin)
 	}
-	return "—"
-}
-
-func (s *UpsSnapshot) CommText() string {
-	bq := "норма"
-	if !s.BQ4050OK() {
-		bq = "помилка"
-	}
-
-	ip := "норма"
-	if !s.IP2368OK() {
-		if !s.VBUSPresent() {
-			ip = "не активний"
-		} else {
-			ip = "помилка"
-		}
-	}
-
-	return fmt.Sprintf("BQ4050: %s, IP2368: %s", bq, ip)
+	return "немає активного процесу"
 }
 
 func (s *UpsSnapshot) BQ4050OK() bool {
@@ -339,6 +328,24 @@ func (s *UpsSnapshot) BQ4050OK() bool {
 
 func (s *UpsSnapshot) IP2368OK() bool {
 	return s.CommState&0x02 == 0
+}
+
+func (s *UpsSnapshot) CommText() string {
+	bq := "активний"
+	if !s.BQ4050OK() {
+		bq = "не активний"
+	}
+
+	ip := "активний"
+	if !s.IP2368OK() {
+		if !s.VBUSPresent() {
+			ip = "вимкнений"
+		} else {
+			ip = "не активний"
+		}
+	}
+
+	return fmt.Sprintf("BQ4050: %s, IP2368: %s", bq, ip)
 }
 
 func (s *UpsSnapshot) FirmwareText() string {
@@ -365,6 +372,11 @@ func GetUpsStatus() string {
 		chargeText = s.ChargeDetailsText()
 	}
 
+	capacityText := fmt.Sprintf("%d mAh", s.RemainingMAh)
+	if s.FullCapacityMAh > 0 {
+		capacityText = fmt.Sprintf("%d / %d mAh", s.RemainingMAh, s.FullCapacityMAh)
+	}
+
 	return fmt.Sprintf(
 		`%s UPS HAT (E)
 
@@ -378,7 +390,7 @@ func GetUpsStatus() string {
 • Батарея: %.3f V / %.3f A
 
 🔋 Батарея
-• Заряд: %d%% (%d mAh)
+• Заряд: %d%% (%s)
 • %s: %s
 
 🔬 Банки
@@ -395,7 +407,7 @@ func GetUpsStatus() string {
 		vbusV, vbusA, vbusW,
 		batV, batA,
 		s.BatteryPercent,
-		s.RemainingMAh,
+		capacityText,
 		s.ETALabel(), s.ETAString(),
 		s.Cell1MV, s.Cell2MV, s.Cell3MV, s.Cell4MV,
 		s.CellDeltaText(),
@@ -405,7 +417,15 @@ func GetUpsStatus() string {
 }
 
 func readReg8(reg string) (int, error) {
-	cmd := exec.Command("timeout", strconv.Itoa(i2cTimeoutSec), "i2cget", "-y", strconv.Itoa(upsI2CBus), upsI2CAddr, reg)
+	cmd := exec.Command(
+		"timeout",
+		strconv.Itoa(i2cTimeoutSec),
+		"i2cget",
+		"-y",
+		strconv.Itoa(upsI2CBus),
+		upsI2CAddr,
+		reg,
+	)
 	out, err := cmd.Output()
 	if err != nil {
 		return 0, err
