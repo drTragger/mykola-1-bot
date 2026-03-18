@@ -13,8 +13,8 @@ const (
 	upsI2CBus  = 1
 	upsI2CAddr = "0x2d"
 
-	regCommState   = "0x03"
 	regChargeState = "0x02"
+	regCommState   = "0x03"
 
 	regVBUSVoltageLo = "0x10"
 	regVBUSVoltageHi = "0x11"
@@ -45,6 +45,8 @@ const (
 	regCell4Lo = "0x36"
 	regCell4Hi = "0x37"
 
+	regFirmwareVersion = "0x50"
+
 	minVBUSPresentMV = 5000
 	upsCacheTTL      = 5 * time.Second
 	i2cTimeoutSec    = 2
@@ -70,7 +72,8 @@ type UpsSnapshot struct {
 	Cell3MV int
 	Cell4MV int
 
-	ReadAt time.Time
+	FirmwareVersion int
+	ReadAt          time.Time
 }
 
 var (
@@ -158,6 +161,10 @@ func readUpsSnapshotRaw() (*UpsSnapshot, error) {
 		return nil, fmt.Errorf("не вдалося прочитати cell4: %w", err)
 	}
 
+	if s.FirmwareVersion, err = readReg8(regFirmwareVersion); err != nil {
+		s.FirmwareVersion = -1
+	}
+
 	s.ReadAt = time.Now()
 
 	return s, nil
@@ -189,26 +196,39 @@ func (s *UpsSnapshot) StateEmoji() string {
 func (s *UpsSnapshot) StateText() string {
 	switch {
 	case s.Charging():
-		return "Зарядка"
+		return "заряджається"
 	case s.Discharging():
-		return "Розряд"
+		return "розряджається"
 	case s.VBUSPresent():
-		return "Підключено до живлення"
+		return "підключено до живлення"
 	default:
-		return "Стан невідомий"
+		return "стан невідомий"
+	}
+}
+
+func (s *UpsSnapshot) ShortStateText() string {
+	switch {
+	case s.Charging():
+		return "charging"
+	case s.Discharging():
+		return "discharging"
+	case s.VBUSPresent():
+		return "external_power"
+	default:
+		return "unknown"
 	}
 }
 
 func (s *UpsSnapshot) PowerSourceText() string {
 	switch {
 	case s.VBUSPresent() && s.Charging():
-		return "Зовнішнє живлення + зарядка"
+		return "зовнішнє живлення + зарядка"
 	case s.VBUSPresent():
-		return "Зовнішнє живлення"
+		return "зовнішнє живлення"
 	case s.Discharging():
-		return "Живлення від батареї"
+		return "живлення від батареї"
 	default:
-		return "Невідомо"
+		return "невідомо"
 	}
 }
 
@@ -230,10 +250,6 @@ func (s *UpsSnapshot) VBUSCurrentA() float64 {
 
 func (s *UpsSnapshot) VBUSPowerW() float64 {
 	return float64(s.VBUSPowerMW) / 1000.0
-}
-
-func (s *UpsSnapshot) Cells() []int {
-	return []int{s.Cell1MV, s.Cell2MV, s.Cell3MV, s.Cell4MV}
 }
 
 func (s *UpsSnapshot) CellMinMV() int {
@@ -260,17 +276,6 @@ func (s *UpsSnapshot) CellDeltaMV() int {
 	return s.CellMaxMV() - s.CellMinMV()
 }
 
-func (s *UpsSnapshot) ETAString() string {
-	switch {
-	case s.Discharging():
-		return formatMinutesSmart(s.RemainDisMin)
-	case s.Charging():
-		return formatMinutesSmart(s.RemainChgMin)
-	default:
-		return "—"
-	}
-}
-
 func (s *UpsSnapshot) ETALabel() string {
 	switch {
 	case s.Discharging():
@@ -282,17 +287,78 @@ func (s *UpsSnapshot) ETALabel() string {
 	}
 }
 
-func (s *UpsSnapshot) ShortStateText() string {
+func (s *UpsSnapshot) ETAString() string {
 	switch {
-	case s.Charging():
-		return "charging"
 	case s.Discharging():
-		return "discharging"
-	case s.VBUSPresent():
-		return "external_power"
+		return formatMinutesSmart(s.RemainDisMin)
+	case s.Charging():
+		return formatMinutesSmart(s.RemainChgMin)
 	default:
-		return "unknown"
+		return "—"
 	}
+}
+
+func (s *UpsSnapshot) BQ4050OK() bool {
+	return s.CommState&0x01 == 0
+}
+
+func (s *UpsSnapshot) IP2368OK() bool {
+	return s.CommState&0x02 == 0
+}
+
+func (s *UpsSnapshot) CommText() string {
+	bq := "❌ помилка"
+	if s.BQ4050OK() {
+		bq = "✅ норма"
+	}
+
+	ip := "❌ помилка"
+	if s.IP2368OK() {
+		ip = "✅ норма"
+	}
+
+	return fmt.Sprintf("BQ4050: %s, IP2368: %s", bq, ip)
+}
+
+func (s *UpsSnapshot) IsFastCharging() bool {
+	return s.ChargeState&0x80 != 0
+}
+
+func (s *UpsSnapshot) ChargePhase() string {
+	phase := (s.ChargeState >> 4) & 0x07
+
+	switch phase {
+	case 0:
+		return "очікування"
+	case 1:
+		return "попередній заряд"
+	case 2:
+		return "постійний струм"
+	case 3:
+		return "постійна напруга"
+	case 4:
+		return "заряд завершено"
+	case 5:
+		return "очікує зарядки"
+	case 6:
+		return "таймаут зарядки"
+	default:
+		return "невідомо"
+	}
+}
+
+func (s *UpsSnapshot) ChargeDetailsText() string {
+	if s.IsFastCharging() {
+		return s.ChargePhase() + " (швидка зарядка)"
+	}
+	return s.ChargePhase()
+}
+
+func (s *UpsSnapshot) FirmwareText() string {
+	if s.FirmwareVersion < 0 {
+		return "н/д"
+	}
+	return fmt.Sprintf("0x%X", s.FirmwareVersion)
 }
 
 func GetUpsStatus() string {
@@ -302,25 +368,48 @@ func GetUpsStatus() string {
 	}
 
 	return fmt.Sprintf(
-		`%s *UPS HAT (E):* %s
+		`%s *UPS HAT (E)*
 
-🔋 *Заряд:* %d%%
-🔌 *Джерело:* %s
-🔌 *VBUS:* %.3f V / %.3f A / %.3f W
-🪫 *Батарея:* %.3f V / %.3f A
-🔋 *Ємність:* %d mAh
-⏳ *%s:* %s
-🔋 *Банки:* %d / %d / %d / %d mV
-📏 *Дельта банок:* %d mV`,
-		s.StateEmoji(), s.StateText(),
-		s.BatteryPercent,
+📌 *Стан*
+• Режим: %s
+• Джерело: %s
+• Зарядка: %s
+
+⚡ *Живлення*
+• VBUS: %.3f V / %.3f A / %.3f W
+• Батарея: %.3f V / %.3f A
+
+🔋 *Батарея*
+• Заряд: %d%%
+• Залишок: %d mAh
+• %s: %s
+
+🔬 *Банки*
+• Банка 1: %d mV
+• Банка 2: %d mV
+• Банка 3: %d mV
+• Банка 4: %d mV
+• Дельта: %d mV
+
+🧩 *Службова інформація*
+• Комунікація: %s
+• Прошивка: %s`,
+		s.StateEmoji(),
+		s.StateText(),
 		s.PowerSourceText(),
+		s.ChargeDetailsText(),
 		s.VBUSVoltageV(), s.VBUSCurrentA(), s.VBUSPowerW(),
 		s.BatteryVoltageV(), s.BatteryCurrentA(),
+		s.BatteryPercent,
 		s.RemainingMAh,
 		s.ETALabel(), s.ETAString(),
-		s.Cell1MV, s.Cell2MV, s.Cell3MV, s.Cell4MV,
+		s.Cell1MV,
+		s.Cell2MV,
+		s.Cell3MV,
+		s.Cell4MV,
 		s.CellDeltaMV(),
+		s.CommText(),
+		s.FirmwareText(),
 	)
 }
 
@@ -330,22 +419,21 @@ func GetUpsShortStatus() string {
 		return "UPS: н/д"
 	}
 
-	etaLabel := "eta"
+	etaLabel := "ETA"
 	if s.Discharging() {
-		etaLabel = "remain"
+		etaLabel = "залишилось"
 	} else if s.Charging() {
-		etaLabel = "to_full"
+		etaLabel = "до повної"
 	}
 
 	return fmt.Sprintf(
-		"UPS: %s, %d%%, source=%s, VBUS=%.3fV/%.3fA/%.3fW, BAT=%.3fV/%.3fA, %s=%s, cells=%d/%d/%d/%dmV, delta=%dmV",
-		s.ShortStateText(),
+		"UPS: %s, %d%%, джерело=%s, VBUS=%.3fV/%.3fA/%.3fW, батарея=%.3fV/%.3fA, %s=%s, дельта=%dmV",
+		s.StateText(),
 		s.BatteryPercent,
 		s.PowerSourceText(),
 		s.VBUSVoltageV(), s.VBUSCurrentA(), s.VBUSPowerW(),
 		s.BatteryVoltageV(), s.BatteryCurrentA(),
 		etaLabel, s.ETAString(),
-		s.Cell1MV, s.Cell2MV, s.Cell3MV, s.Cell4MV,
 		s.CellDeltaMV(),
 	)
 }
