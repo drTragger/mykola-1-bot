@@ -34,7 +34,7 @@ func init() {
 }
 
 func GetTorrentsStatus() string {
-	torrents, err := GetTorrents()
+	torrents, err := GetSortedTorrents()
 	if err != nil {
 		return fmt.Sprintf("❌ Помилка qBittorrent: `%v`", err)
 	}
@@ -42,8 +42,6 @@ func GetTorrentsStatus() string {
 	if len(torrents) == 0 {
 		return "📭 *qBittorrent*\n\nНемає торрентів."
 	}
-
-	sortTorrents(torrents)
 
 	total := len(torrents)
 	activeDownloading := 0
@@ -56,7 +54,7 @@ func GetTorrentsStatus() string {
 		totalDl += t.Dlspeed
 		totalUl += t.Upspeed
 
-		if isDownloadingState(t.State) {
+		if IsDownloadingState(t.State) {
 			activeDownloading++
 		}
 		if isUploadingState(t.State) {
@@ -103,7 +101,7 @@ func GetTorrentsStatus() string {
 			line += fmt.Sprintf(" • %s", size)
 		}
 
-		if isDownloadingState(t.State) && t.Eta > 0 {
+		if IsDownloadingState(t.State) && t.Eta > 0 {
 			line += fmt.Sprintf("\n⏳ ETA: %s", formatETA(t.Eta))
 		}
 
@@ -111,7 +109,7 @@ func GetTorrentsStatus() string {
 			line += fmt.Sprintf("\n🌱 %d сидів • 🧲 %d качають", t.NumSeeds, t.NumLeechs)
 		}
 
-		if t.NumSeeds == 0 && isDownloadingState(t.State) {
+		if t.NumSeeds == 0 && IsDownloadingState(t.State) {
 			line += "\n⚠️ Немає сидів — може не скачатися"
 		}
 
@@ -255,7 +253,7 @@ func sortTorrents(torrents []Torrent) {
 
 func torrentPriority(t Torrent) int {
 	switch {
-	case isDownloadingState(t.State):
+	case IsDownloadingState(t.State):
 		return 0
 	case isUploadingState(t.State):
 		return 1
@@ -266,7 +264,7 @@ func torrentPriority(t Torrent) int {
 	}
 }
 
-func isDownloadingState(state string) bool {
+func IsDownloadingState(state string) bool {
 	switch state {
 	case "downloading", "metaDL", "forcedDL", "stalledDL", "checkingDL", "queuedDL":
 		return true

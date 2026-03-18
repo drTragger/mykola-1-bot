@@ -2,7 +2,6 @@ package commands
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 
 	"mykola-1-bot/utils"
@@ -11,75 +10,135 @@ import (
 )
 
 func TorrentsCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
-	text := utils.GetTorrentsStatus()
+	torrents, err := utils.GetSortedTorrents()
+	if err != nil {
+		reply := tgbotapi.NewMessage(msg.Chat.ID, fmt.Sprintf("❌ Помилка qBittorrent: %v", err))
+		bot.Send(reply)
+		return
+	}
+
+	text := buildTorrentsText(torrents)
 
 	reply := tgbotapi.NewMessage(msg.Chat.ID, text)
 	reply.ParseMode = "Markdown"
+	reply.ReplyMarkup = buildTorrentsKeyboard(torrents)
+
 	bot.Send(reply)
 }
 
-func PauseTorrentCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
-	index, err := getTorrentIndex(msg.Text)
-	if err != nil {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "❌ Формат: `/pause <номер>`"))
-		return
+func buildTorrentsText(torrents []utils.Torrent) string {
+	if len(torrents) == 0 {
+		return "📭 *qBittorrent*\n\nНемає торрентів."
 	}
 
-	torrent, err := utils.FindTorrentByIndex(index)
-	if err != nil {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "❌ "+err.Error()))
-		return
+	total := len(torrents)
+	activeDownloading := 0
+	activeUploading := 0
+
+	var totalDl int64
+	var totalUl int64
+
+	for _, t := range torrents {
+		totalDl += t.Dlspeed
+		totalUl += t.Upspeed
+
+		if utils.IsDownloadingState(t.State) {
+			activeDownloading++
+		}
+		if utils.IsUploadingState(t.State) {
+			activeUploading++
+		}
 	}
 
-	if err := utils.PauseTorrent(torrent.Hash); err != nil {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, fmt.Sprintf("❌ Не вдалося поставити на паузу: %v", err)))
-		return
+	var b strings.Builder
+	b.WriteString("🎬 *qBittorrent*\n\n")
+	b.WriteString(fmt.Sprintf(
+		"📦 *Всього:* %d\n⬇️ *Завантажуються:* %d\n⬆️ *Роздаються:* %d\n🚀 *Швидкість:* ↓ %s | ↑ %s\n\n",
+		total,
+		activeDownloading,
+		activeUploading,
+		utils.FormatSpeedOrDash(totalDl),
+		utils.FormatSpeedOrDash(totalUl),
+	))
+
+	limit := 10
+	for i, t := range torrents {
+		if i >= limit {
+			b.WriteString(fmt.Sprintf("\n_...і ще %d торрент(ів)_", len(torrents)-limit))
+			break
+		}
+
+		index := i + 1
+		name := fmt.Sprintf("%d. %s", index, utils.EscapeMarkdown(utils.Truncate(t.Name, 45)))
+		progress := int(t.Progress * 100)
+		size := utils.FormatBytesIECInt64(utils.EffectiveSize(t.Size, t.TotalSize))
+		state := utils.MapState(t.State)
+		bar := utils.ProgressBar(progress, 10)
+
+		line := fmt.Sprintf(
+			"*%s*\n%s %d%% • %s\n⬇️ %s • ⬆️ %s",
+			name,
+			bar,
+			progress,
+			state,
+			utils.FormatSpeedOrDash(t.Dlspeed),
+			utils.FormatSpeedOrDash(t.Upspeed),
+		)
+
+		if size != "0 B" {
+			line += fmt.Sprintf(" • %s", size)
+		}
+
+		if utils.IsDownloadingState(t.State) && t.Eta > 0 {
+			line += fmt.Sprintf("\n⏳ ETA: %s", utils.FormatETA(t.Eta))
+		}
+
+		if t.NumSeeds > 0 || t.NumLeechs > 0 {
+			line += fmt.Sprintf("\n🌱 %d сидів • 🧲 %d качають", t.NumSeeds, t.NumLeechs)
+		}
+
+		if t.NumSeeds == 0 && utils.IsDownloadingState(t.State) {
+			line += "\n⚠️ Немає сидів — може не скачатися"
+		}
+
+		b.WriteString(line + "\n\n")
 	}
 
-	reply := tgbotapi.NewMessage(
-		msg.Chat.ID,
-		fmt.Sprintf("⏸ Поставив на паузу: *%s*", utils.EscapeMarkdown(torrent.Name)),
-	)
-	reply.ParseMode = "Markdown"
-	bot.Send(reply)
+	return b.String()
 }
 
-func ResumeTorrentCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
-	index, err := getTorrentIndex(msg.Text)
-	if err != nil {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "❌ Формат: `/resume <номер>`"))
-		return
+func buildTorrentsKeyboard(torrents []utils.Torrent) tgbotapi.InlineKeyboardMarkup {
+	rows := make([][]tgbotapi.InlineKeyboardButton, 0)
+
+	limit := 10
+	for i, t := range torrents {
+		if i >= limit {
+			break
+		}
+
+		label := fmt.Sprintf("%d", i+1)
+
+		var button tgbotapi.InlineKeyboardButton
+		if utils.IsPausedState(t.State) {
+			button = tgbotapi.NewInlineKeyboardButtonData(
+				fmt.Sprintf("▶️ %s", label),
+				"torrent:resume:"+t.Hash,
+			)
+		} else {
+			button = tgbotapi.NewInlineKeyboardButtonData(
+				fmt.Sprintf("⏸ %s", label),
+				"torrent:pause:"+t.Hash,
+			)
+		}
+
+		rows = append(rows, tgbotapi.NewInlineKeyboardRow(button))
 	}
 
-	torrent, err := utils.FindTorrentByIndex(index)
-	if err != nil {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "❌ "+err.Error()))
-		return
+	if len(rows) > 0 {
+		rows = append(rows, tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🔄 Оновити", "torrent:refresh"),
+		))
 	}
 
-	if err := utils.ResumeTorrent(torrent.Hash); err != nil {
-		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, fmt.Sprintf("❌ Не вдалося відновити: %v", err)))
-		return
-	}
-
-	reply := tgbotapi.NewMessage(
-		msg.Chat.ID,
-		fmt.Sprintf("▶️ Відновив: *%s*", utils.EscapeMarkdown(torrent.Name)),
-	)
-	reply.ParseMode = "Markdown"
-	bot.Send(reply)
-}
-
-func getTorrentIndex(input string) (int, error) {
-	parts := strings.Fields(input)
-	if len(parts) < 2 {
-		return 0, fmt.Errorf("missing index")
-	}
-
-	index, err := strconv.Atoi(parts[1])
-	if err != nil || index <= 0 {
-		return 0, fmt.Errorf("invalid index")
-	}
-
-	return index, nil
+	return tgbotapi.NewInlineKeyboardMarkup(rows...)
 }

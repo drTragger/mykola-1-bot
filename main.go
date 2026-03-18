@@ -30,6 +30,12 @@ func main() {
 	for update := range updates {
 		if update.Message != nil {
 			commands.HandleCommand(bot, update.Message)
+			continue
+		}
+
+		if update.CallbackQuery != nil {
+			commands.HandleCallback(bot, update.CallbackQuery)
+			continue
 		}
 	}
 }
