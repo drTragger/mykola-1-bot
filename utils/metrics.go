@@ -571,8 +571,7 @@ func GetSystemMetrics() string {
 	return fmt.Sprintf(`📊 *Метрики mykola-1*
 
 🌡️ *Температура:* %s
-🧠 *CPU:* %s (%d ядер)
-⚙️ *Частота CPU:* %s
+🧠 *CPU:* %s (%d ядер) %s
 📦 *Навантаження:* %s
 
 💾 *RAM:* %s
