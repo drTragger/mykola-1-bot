@@ -50,9 +50,10 @@ const (
 
 	regFirmwareVersion = "0x50"
 
-	minVBUSPresentMV = 5000
-	upsCacheTTL      = 5 * time.Second
-	i2cTimeoutSec    = 2
+	minVBUSPresentMV   = 5000
+	minChargeCurrentMA = 100
+	upsCacheTTL        = 5 * time.Second
+	i2cTimeoutSec      = 2
 )
 
 type UpsSnapshot struct {
@@ -173,11 +174,15 @@ func (s *UpsSnapshot) VBUSPresent() bool {
 }
 
 func (s *UpsSnapshot) Charging() bool {
-	return s.BatteryCurrentMA > 0
+	return s.VBUSPresent() && s.BatteryCurrentMA > minChargeCurrentMA
 }
 
 func (s *UpsSnapshot) Discharging() bool {
 	return s.BatteryCurrentMA < 0
+}
+
+func (s *UpsSnapshot) IdleCharging() bool {
+	return s.VBUSPresent() && s.BatteryCurrentMA > 0 && s.BatteryCurrentMA <= minChargeCurrentMA
 }
 
 func (s *UpsSnapshot) StateEmoji() string {
@@ -186,6 +191,8 @@ func (s *UpsSnapshot) StateEmoji() string {
 		return "⚡️"
 	case s.Discharging():
 		return "🔋"
+	case s.IdleCharging():
+		return "🔌"
 	default:
 		return "🔌"
 	}
@@ -197,6 +204,8 @@ func (s *UpsSnapshot) StateText() string {
 		return "заряджається"
 	case s.Discharging():
 		return "розряджається"
+	case s.IdleCharging():
+		return "підтримка заряду"
 	case s.VBUSPresent():
 		return "підключено до живлення"
 	default:
@@ -245,6 +254,9 @@ func (s *UpsSnapshot) IsFastCharging() bool {
 }
 
 func (s *UpsSnapshot) ChargeDetailsText() string {
+	if s.IdleCharging() {
+		return "підтримка заряду"
+	}
 	if s.IsFastCharging() {
 		return s.ChargePhase() + " (швидка)"
 	}
@@ -319,7 +331,13 @@ func (s *UpsSnapshot) ETAString() string {
 	if s.Charging() {
 		return formatMinutesSmart(s.RemainChgMin)
 	}
-	return "немає активного процесу"
+	if s.IdleCharging() {
+		return "підтримка заряду"
+	}
+	if s.VBUSPresent() {
+		return "батарея заряджена"
+	}
+	return "—"
 }
 
 func (s *UpsSnapshot) BQ4050OK() bool {
