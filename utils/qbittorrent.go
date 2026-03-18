@@ -57,7 +57,7 @@ func GetTorrentsStatus() string {
 		if IsDownloadingState(t.State) {
 			activeDownloading++
 		}
-		if isUploadingState(t.State) {
+		if IsUploadingState(t.State) {
 			activeUploading++
 		}
 	}
@@ -69,8 +69,8 @@ func GetTorrentsStatus() string {
 		total,
 		activeDownloading,
 		activeUploading,
-		formatSpeedOrDash(totalDl),
-		formatSpeedOrDash(totalUl),
+		FormatSpeedOrDash(totalDl),
+		FormatSpeedOrDash(totalUl),
 	))
 
 	limit := 10
@@ -84,7 +84,7 @@ func GetTorrentsStatus() string {
 		name := fmt.Sprintf("%d. %s", index, EscapeMarkdown(truncate(t.Name, 45)))
 		progress := int(t.Progress * 100)
 		size := formatBytesIECInt64(effectiveSize(t.Size, t.TotalSize))
-		state := mapState(t.State)
+		state := MapState(t.State)
 		bar := progressBar(progress, 10)
 
 		line := fmt.Sprintf(
@@ -93,8 +93,8 @@ func GetTorrentsStatus() string {
 			bar,
 			progress,
 			state,
-			formatSpeedOrDash(t.Dlspeed),
-			formatSpeedOrDash(t.Upspeed),
+			FormatSpeedOrDash(t.Dlspeed),
+			FormatSpeedOrDash(t.Upspeed),
 		)
 
 		if size != "0 B" {
@@ -255,7 +255,7 @@ func torrentPriority(t Torrent) int {
 	switch {
 	case IsDownloadingState(t.State):
 		return 0
-	case isUploadingState(t.State):
+	case IsUploadingState(t.State):
 		return 1
 	case strings.HasPrefix(t.State, "paused"):
 		return 3
@@ -270,48 +270,6 @@ func IsDownloadingState(state string) bool {
 		return true
 	default:
 		return false
-	}
-}
-
-func isUploadingState(state string) bool {
-	switch state {
-	case "uploading", "forcedUP", "stalledUP", "queuedUP":
-		return true
-	default:
-		return false
-	}
-}
-
-func mapState(state string) string {
-	switch state {
-	case "downloading":
-		return "⬇️ Завантаження"
-	case "metaDL":
-		return "🧲 Отримання метаданих"
-	case "forcedDL":
-		return "⬇️ Форсоване завантаження"
-	case "stalledDL":
-		return "⏳ Очікує пірів"
-	case "checkingDL", "checkingUP":
-		return "🔍 Перевірка"
-	case "queuedDL":
-		return "📥 У черзі"
-	case "uploading":
-		return "⬆️ Роздача"
-	case "forcedUP":
-		return "⬆️ Форсована роздача"
-	case "stalledUP":
-		return "🌱 Сід без активності"
-	case "queuedUP":
-		return "📤 У черзі"
-	case "pausedDL", "pausedUP":
-		return "⏸ Пауза"
-	case "moving":
-		return "📂 Переміщення"
-	case "error", "missingFiles":
-		return "❌ Помилка"
-	default:
-		return state
 	}
 }
 
@@ -332,13 +290,6 @@ func formatSpeed(b int64) string {
 	default:
 		return fmt.Sprintf("%.0f KB/s", kb)
 	}
-}
-
-func formatSpeedOrDash(b int64) string {
-	if b <= 0 {
-		return "—"
-	}
-	return formatSpeed(b)
 }
 
 func formatETA(seconds int64) string {

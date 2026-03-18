@@ -2,6 +2,7 @@ package commands
 
 import (
 	"strings"
+	"time"
 
 	"mykola-1-bot/config"
 	"mykola-1-bot/utils"
@@ -13,8 +14,6 @@ func HandleCallback(bot *tgbotapi.BotAPI, callback *tgbotapi.CallbackQuery) {
 	if callback == nil || callback.From == nil {
 		return
 	}
-
-	bot.Request(tgbotapi.NewCallback(callback.ID, ""))
 
 	if callback.From.ID != config.Cfg.Bot.OwnerId {
 		bot.Request(tgbotapi.NewCallback(callback.ID, "⛔ Недостатньо прав"))
@@ -30,12 +29,28 @@ func HandleCallback(bot *tgbotapi.BotAPI, callback *tgbotapi.CallbackQuery) {
 
 	case strings.HasPrefix(data, "torrent:pause:"):
 		hash := strings.TrimPrefix(data, "torrent:pause:")
-		utils.PauseTorrent(hash)
+
+		if err := utils.PauseTorrent(hash); err != nil {
+			bot.Request(tgbotapi.NewCallback(callback.ID, "❌ Помилка"))
+			return
+		}
+
+		utils.InvalidateTorrentsCache()
+		time.Sleep(300 * time.Millisecond)
+
 		updateTorrentsMessage(bot, callback, "⏸ Пауза")
 
 	case strings.HasPrefix(data, "torrent:resume:"):
 		hash := strings.TrimPrefix(data, "torrent:resume:")
-		utils.ResumeTorrent(hash)
+
+		if err := utils.ResumeTorrent(hash); err != nil {
+			bot.Request(tgbotapi.NewCallback(callback.ID, "❌ Помилка"))
+			return
+		}
+
+		utils.InvalidateTorrentsCache()
+		time.Sleep(300 * time.Millisecond)
+
 		updateTorrentsMessage(bot, callback, "▶️ Відновлено")
 	}
 }
