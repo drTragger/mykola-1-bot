@@ -254,13 +254,24 @@ func (s *UpsSnapshot) IsFastCharging() bool {
 }
 
 func (s *UpsSnapshot) ChargeDetailsText() string {
+	if !s.VBUSPresent() {
+		return "—"
+	}
+
 	if s.IdleCharging() {
 		return "підтримка заряду"
 	}
-	if s.IsFastCharging() {
-		return s.ChargePhase() + " (швидка)"
+
+	if !s.Charging() {
+		return "заряд не виконується"
 	}
-	return s.ChargePhase()
+
+	phase := s.ChargePhase()
+	if s.IsFastCharging() {
+		return phase + " (швидка)"
+	}
+
+	return phase
 }
 
 func (s *UpsSnapshot) BatteryVoltageV() float64 {
@@ -335,7 +346,7 @@ func (s *UpsSnapshot) ETAString() string {
 		return "підтримка заряду"
 	}
 	if s.VBUSPresent() {
-		return "батарея заряджена"
+		return "заряд не виконується"
 	}
 	return "—"
 }
