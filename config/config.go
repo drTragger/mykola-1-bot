@@ -12,6 +12,11 @@ type Config struct {
 		Username string `toml:"username"`
 		OwnerId  int64  `toml:"owner_id"`
 	}
+	QBittorrent struct {
+		URL      string `toml:"url"`
+		Username string `toml:"username"`
+		Password string `toml:"password"`
+	}
 	Settings struct {
 		MetricsEnabled bool `toml:"metrics_enabled"`
 	}
