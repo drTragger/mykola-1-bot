@@ -462,20 +462,28 @@ func getThrottledStatus() string {
 func GetSystemMetrics() string {
 	cpuUsage, cpuCount := getCPUUsage()
 	cpuFreq := getCPUFreq()
+
 	ramUsage := getMemoryUsage()
 	zramUsage, swapfileUsage := getSwapDetailed()
+
 	diskUsage := getDiskUsage("/")
 	diskFree := getDiskFree("/")
+
 	temp := getTemperature()
 	loadAvg := getLoadAvg()
+
 	uptime := getUptime()
 	bootTime := getBootTime()
+
 	procCount := getProcessCount()
 	usersCount := getLoggedInUsersCount()
+
 	publicIP := readExternalURL("https://api.ipify.org")
 	ping := runCommandAndExtract(`time=([\d.]+) ms`, "ping", "-c", "1", "-w", "2", "8.8.8.8")
+
 	netRx, netTx := getNetworkTotals()
 	netRxSpeed, netTxSpeed := getNetworkSpeed()
+
 	throttled := getThrottledStatus()
 	servicesBlock := getServicesBlock()
 
@@ -483,25 +491,28 @@ func GetSystemMetrics() string {
 
 🌡️ *Температура:* %s
 🧠 *CPU:* %s (%d ядер)
-⚙️ *CPU freq:* %s
+⚙️ *Частота CPU:* %s
 📦 *Навантаження:* %s
+
 💾 *RAM:* %s
 💤 *ZRAM:* %s
-💤 *SWAP file:* %s
+💤 *SWAP:* %s
+
 🗄️ *SSD:* %s
-🆓 *Вільно на SSD:* %s
-📈 *Процесів:* %d
-👤 *Користувачів онлайн:* %d
+🆓 *Вільно:* %s
+
+📈 *Процеси:* %d
+👤 *Користувачі:* %d
+
 ⏳ *Аптайм:* %s
-🕓 *Завантажено о:* %s
+🕓 *Запуск системи:* %s
 
-🍓 *Raspberry Pi health:*
-⚠️ *Throttled:* %s
+🍓 *Стан Raspberry Pi*
+⚠️ *Throttling:* %s
 
-🌐 *Мережа RX:* %s
-🌐 *Мережа TX:* %s
-⬇️ *Швидкість RX:* %s
-⬆️ *Швидкість TX:* %s
+🌐 *Мережа*
+• RX: %s (%s)
+• TX: %s (%s)
 
 🌍 *IP:* %s
 📡 *Ping:* %s ms
@@ -511,22 +522,28 @@ func GetSystemMetrics() string {
 		cpuUsage, cpuCount,
 		cpuFreq,
 		loadAvg,
+
 		ramUsage,
 		zramUsage,
 		swapfileUsage,
+
 		diskUsage,
 		diskFree,
+
 		procCount,
 		usersCount,
+
 		uptime,
 		bootTime,
+
 		throttled,
-		netRx,
-		netTx,
-		netRxSpeed,
-		netTxSpeed,
+
+		netRx, netRxSpeed,
+		netTx, netTxSpeed,
+
 		publicIP,
 		ping,
+
 		servicesBlock,
 	)
 }
