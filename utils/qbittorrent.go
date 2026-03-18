@@ -385,11 +385,8 @@ func progressBar(percent int, width int) string {
 	}
 
 	filled := percent * width / 100
-	if filled > width {
-		filled = width
-	}
 
-	return "[" + strings.Repeat("■", filled) + strings.Repeat("□", width-filled) + "]"
+	return "▰" + strings.Repeat("█", filled) + strings.Repeat("░", width-filled)
 }
 
 func truncate(s string, max int) string {
