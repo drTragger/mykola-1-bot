@@ -3,5 +3,10 @@ token = "your-telegram-bot-token"
 username = "your-telegram-bot-username"
 owner_id = 123456789
 
+[qbittorrent]
+url = "http://localhost:8080"
+username = "username"
+password = "password"
+
 [settings]
 metrics_enabled = true

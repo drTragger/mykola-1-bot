@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/cookiejar"
 	"net/url"
 	"strings"
 	"time"
@@ -21,14 +22,21 @@ type Torrent struct {
 	Size     int64   `json:"size"`
 }
 
-var qbClient = &http.Client{
-	Timeout: 5 * time.Second,
+var qbClient *http.Client
+
+func init() {
+	jar, _ := cookiejar.New(nil)
+
+	qbClient = &http.Client{
+		Jar:     jar,
+		Timeout: 5 * time.Second,
+	}
 }
 
 func GetTorrentsStatus() string {
 	torrents, err := GetTorrents()
 	if err != nil {
-		return "❌ Не вдалося отримати список торентів"
+		return fmt.Sprintf("❌ Помилка qBittorrent: %v", err)
 	}
 
 	if len(torrents) == 0 {
@@ -77,6 +85,12 @@ func qbLogin() (*http.Client, error) {
 	}
 	defer resp.Body.Close()
 
+	body, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode != http.StatusOK || !strings.Contains(string(body), "Ok.") {
+		return nil, fmt.Errorf("qb login failed: %s", string(body))
+	}
+
 	return qbClient, nil
 }
 
@@ -93,7 +107,14 @@ func GetTorrents() ([]Torrent, error) {
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("qb torrents request failed: status %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
 
 	var torrents []Torrent
 	if err := json.Unmarshal(body, &torrents); err != nil {
