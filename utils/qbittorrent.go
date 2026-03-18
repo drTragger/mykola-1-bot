@@ -15,21 +15,6 @@ import (
 	"mykola-1-bot/config"
 )
 
-type Torrent struct {
-	Name       string  `json:"name"`
-	Progress   float64 `json:"progress"`
-	State      string  `json:"state"`
-	Dlspeed    int64   `json:"dlspeed"`
-	Upspeed    int64   `json:"upspeed"`
-	Size       int64   `json:"size"`
-	TotalSize  int64   `json:"total_size"`
-	Eta        int64   `json:"eta"`
-	NumSeeds   int64   `json:"num_seeds"`
-	NumLeechs  int64   `json:"num_leechs"`
-	Downloaded int64   `json:"downloaded"`
-	Uploaded   int64   `json:"uploaded"`
-}
-
 var (
 	qbClient *http.Client
 
@@ -92,12 +77,13 @@ func GetTorrentsStatus() string {
 
 	limit := 10
 	for i, t := range torrents {
+		index := i + 1
 		if i >= limit {
 			b.WriteString(fmt.Sprintf("\n_...і ще %d торрент(ів)_", len(torrents)-limit))
 			break
 		}
 
-		name := escapeMarkdown(truncate(t.Name, 45))
+		name := fmt.Sprintf("%d. %s", index, EscapeMarkdown(truncate(t.Name, 45)))
 		progress := int(t.Progress * 100)
 		size := formatBytesIECInt64(effectiveSize(t.Size, t.TotalSize))
 		state := mapState(t.State)
@@ -400,7 +386,7 @@ func truncate(s string, max int) string {
 	return string(r[:max]) + "..."
 }
 
-func escapeMarkdown(s string) string {
+func EscapeMarkdown(s string) string {
 	replacer := strings.NewReplacer(
 		"_", "\\_",
 		"*", "\\*",

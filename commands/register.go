@@ -19,7 +19,7 @@ var registry = map[string]func(*tgbotapi.BotAPI, *tgbotapi.Message){
 	"/help":     HelpCommand,
 }
 
-var dynamicCommands = []string{"/restart", "/stop", "/start", "/status"}
+var dynamicCommands = []string{"/restart", "/stop", "/start", "/status", "/pause", "/resume"}
 
 func HandleCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 	if msg == nil || msg.From == nil {
@@ -47,6 +47,10 @@ func HandleCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 				StartServiceCommand(bot, msg)
 			case "/status":
 				StatusServiceCommand(bot, msg)
+			case "/pause":
+				PauseTorrentCommand(bot, msg)
+			case "/resume":
+				ResumeTorrentCommand(bot, msg)
 			}
 			return
 		}
