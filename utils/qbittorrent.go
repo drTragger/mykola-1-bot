@@ -86,8 +86,8 @@ func GetTorrentsStatus() string {
 		total,
 		activeDownloading,
 		activeUploading,
-		formatSpeed(totalDl),
-		formatSpeed(totalUl),
+		formatSpeedOrDash(totalDl),
+		formatSpeedOrDash(totalUl),
 	))
 
 	limit := 10
@@ -104,13 +104,13 @@ func GetTorrentsStatus() string {
 		bar := progressBar(progress, 10)
 
 		line := fmt.Sprintf(
-			"*%s*\n%s %d%% • %s\n↓ %s • ↑ %s",
+			"*%s*\n%s %d%% • %s\n⬇️ %s • ⬆️ %s",
 			name,
 			bar,
 			progress,
 			state,
-			formatSpeed(t.Dlspeed),
-			formatSpeed(t.Upspeed),
+			formatSpeedOrDash(t.Dlspeed),
+			formatSpeedOrDash(t.Upspeed),
 		)
 
 		if size != "0 B" {
@@ -122,7 +122,11 @@ func GetTorrentsStatus() string {
 		}
 
 		if t.NumSeeds > 0 || t.NumLeechs > 0 {
-			line += fmt.Sprintf("\n🌱 Сіди: %d • 🧲 Лічі: %d", t.NumSeeds, t.NumLeechs)
+			line += fmt.Sprintf("\n🌱 %d сидів • 🧲 %d качають", t.NumSeeds, t.NumLeechs)
+		}
+
+		if t.NumSeeds == 0 && isDownloadingState(t.State) {
+			line += "\n⚠️ Немає сидів — може не скачатися"
 		}
 
 		b.WriteString(line + "\n\n")
@@ -346,6 +350,13 @@ func formatSpeed(b int64) string {
 	}
 }
 
+func formatSpeedOrDash(b int64) string {
+	if b <= 0 {
+		return "—"
+	}
+	return formatSpeed(b)
+}
+
 func formatETA(seconds int64) string {
 	if seconds <= 0 || seconds > 8640000 {
 		return "—"
@@ -397,18 +408,7 @@ func escapeMarkdown(s string) string {
 		"]", "\\]",
 		"(", "\\(",
 		")", "\\)",
-		"~", "\\~",
 		"`", "\\`",
-		">", "\\>",
-		"#", "\\#",
-		"+", "\\+",
-		"-", "\\-",
-		"=", "\\=",
-		"|", "\\|",
-		"{", "\\{",
-		"}", "\\}",
-		".", "\\.",
-		"!", "\\!",
 	)
 	return replacer.Replace(s)
 }
