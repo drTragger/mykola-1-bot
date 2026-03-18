@@ -2,6 +2,7 @@ package utils
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -106,13 +107,17 @@ func runCommandAndExtract(pattern string, cmd string, args ...string) string {
 }
 
 func runCommand(timeoutSec int, cmd string, args ...string) (string, error) {
-	commandArgs := append([]string{strconv.Itoa(timeoutSec), cmd}, args...)
-	ctxCmd := exec.Command("timeout", commandArgs...)
-	out, err := ctxCmd.Output()
-	if err != nil {
-		return "", err
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSec)*time.Second)
+	defer cancel()
+
+	c := exec.CommandContext(ctx, cmd, args...)
+	out, err := c.CombinedOutput()
+
+	// Якщо контекст завершився через тайм‑аут, отримаємо ctx.Err()
+	if ctx.Err() == context.DeadlineExceeded {
+		return "", ctx.Err()
 	}
-	return strings.TrimSpace(string(out)), nil
+	return strings.TrimSpace(string(out)), err
 }
 
 func getCPUUsage() (string, int) {
@@ -288,20 +293,6 @@ func getLoggedInUsersCount() int {
 	return len(users)
 }
 
-func isProcessRunning(name string) string {
-	procs, err := process.Processes()
-	if err != nil {
-		return "н/д"
-	}
-	for _, p := range procs {
-		n, _ := p.Name()
-		if n == name {
-			return "✅"
-		}
-	}
-	return "❌"
-}
-
 func getNetworkTotals() (string, string) {
 	stats, err := gonet.IOCounters(false)
 	if err != nil || len(stats) == 0 {
@@ -460,32 +451,122 @@ func getThrottledStatus() string {
 }
 
 func GetSystemMetrics() string {
-	cpuUsage, cpuCount := getCPUUsage()
-	cpuFreq := getCPUFreq()
+	m := &sysMetrics{}
+	var wg sync.WaitGroup
 
-	ramUsage := getMemoryUsage()
-	zramUsage, swapfileUsage := getSwapDetailed()
+	// CPU: використання, кількість ядер і частота
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		usage, count := getCPUUsage()
+		freq := getCPUFreq()
+		m.mu.Lock()
+		m.cpuUsage = usage
+		m.cpuCount = count
+		m.cpuFreq = freq
+		m.mu.Unlock()
+	}()
 
-	diskUsage := getDiskUsage("/")
-	diskFree := getDiskFree("/")
+	// RAM, ZRAM, SWAP
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		ram := getMemoryUsage()
+		zram, swap := getSwapDetailed()
+		m.mu.Lock()
+		m.ramUsage = ram
+		m.zramUsage = zram
+		m.swapUsage = swap
+		m.mu.Unlock()
+	}()
 
-	temp := getTemperature()
-	loadAvg := getLoadAvg()
+	// Диск: зайнято і вільно
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		used := getDiskUsage("/")
+		free := getDiskFree("/")
+		m.mu.Lock()
+		m.diskUsage = used
+		m.diskFree = free
+		m.mu.Unlock()
+	}()
 
-	uptime := getUptime()
-	bootTime := getBootTime()
+	// Температура та середнє навантаження
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		t := getTemperature()
+		load := getLoadAvg()
+		m.mu.Lock()
+		m.temperature = t
+		m.loadAvg = load
+		m.mu.Unlock()
+	}()
 
-	procCount := getProcessCount()
-	usersCount := getLoggedInUsersCount()
+	// Аптайм та час завантаження
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		up := getUptime()
+		bt := getBootTime()
+		m.mu.Lock()
+		m.uptime = up
+		m.bootTime = bt
+		m.mu.Unlock()
+	}()
 
-	publicIP := readExternalURL("https://api.ipify.org")
-	ping := runCommandAndExtract(`time=([\d.]+) ms`, "ping", "-c", "1", "-w", "2", "8.8.8.8")
+	// Кількість процесів та користувачів
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		pc := getProcessCount()
+		uc := getLoggedInUsersCount()
+		m.mu.Lock()
+		m.procCount = pc
+		m.usersCount = uc
+		m.mu.Unlock()
+	}()
 
-	netRx, netTx := getNetworkTotals()
-	netRxSpeed, netTxSpeed := getNetworkSpeed()
+	// Мережевий трафік та швидкість
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		rx, tx := getNetworkTotals()
+		rxSpeed, txSpeed := getNetworkSpeed()
+		m.mu.Lock()
+		m.netRx = rx
+		m.netTx = tx
+		m.netRxSpeed = rxSpeed
+		m.netTxSpeed = txSpeed
+		m.mu.Unlock()
+	}()
 
-	throttled := getThrottledStatus()
-	servicesBlock := getServicesBlock()
+	// Публічна IP‑адреса та пінг
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		ip := readExternalURL("https://api.ipify.org")
+		latency := runCommandAndExtract(`time=([\d.]+) ms`, "ping", "-c", "1", "-w", "2", "8.8.8.8")
+		m.mu.Lock()
+		m.publicIP = ip
+		m.ping = latency
+		m.mu.Unlock()
+	}()
+
+	// Статус throttling та список сервісів
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		th := getThrottledStatus()
+		services := getServicesBlock()
+		m.mu.Lock()
+		m.throttled = th
+		m.servicesBlock = services
+		m.mu.Unlock()
+	}()
+
+	wg.Wait()
 
 	return fmt.Sprintf(`📊 *Метрики mykola-1*
 
@@ -507,7 +588,7 @@ func GetSystemMetrics() string {
 ⏳ *Аптайм:* %s
 🕓 *Запуск системи:* %s
 
-🍓 *Стан Raspberry Pi*
+🍓 *Стан Raspberry Pi*
 ⚠️ *Throttling:* %s
 
 🌐 *Мережа*
@@ -518,32 +599,24 @@ func GetSystemMetrics() string {
 📡 *Ping:* %s ms
 
 %s`,
-		temp,
-		cpuUsage, cpuCount,
-		cpuFreq,
-		loadAvg,
-
-		ramUsage,
-		zramUsage,
-		swapfileUsage,
-
-		diskUsage,
-		diskFree,
-
-		procCount,
-		usersCount,
-
-		uptime,
-		bootTime,
-
-		throttled,
-
-		netRx, netRxSpeed,
-		netTx, netTxSpeed,
-
-		publicIP,
-		ping,
-
-		servicesBlock,
+		m.temperature,
+		m.cpuUsage, m.cpuCount,
+		m.cpuFreq,
+		m.loadAvg,
+		m.ramUsage,
+		m.zramUsage,
+		m.swapUsage,
+		m.diskUsage,
+		m.diskFree,
+		m.procCount,
+		m.usersCount,
+		m.uptime,
+		m.bootTime,
+		m.throttled,
+		m.netRx, m.netRxSpeed,
+		m.netTx, m.netTxSpeed,
+		m.publicIP,
+		m.ping,
+		m.servicesBlock,
 	)
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"log"
 	"mykola-1-bot/commands"
 	"mykola-1-bot/config"
@@ -9,7 +10,9 @@ import (
 )
 
 func main() {
-	config.LoadConfig("config.toml")
+	confPath := flag.String("config", "config.toml", "шлях до конфігураційного файлу")
+	flag.Parse()
+	config.LoadConfig(*confPath)
 
 	bot, err := tgbotapi.NewBotAPI(config.Cfg.Bot.Token)
 	if err != nil {

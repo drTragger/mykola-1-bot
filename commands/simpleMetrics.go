@@ -1,4 +1,3 @@
-// commands/simple.go
 package commands
 
 import (
