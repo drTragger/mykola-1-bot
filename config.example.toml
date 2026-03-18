@@ -1,0 +1,7 @@
+[bot]
+token = "your-telegram-bot-token"
+username = "your-telegram-bot-username"
+owner_id = "your-chat-id"
+
+[settings]
+metrics_enabled = true
