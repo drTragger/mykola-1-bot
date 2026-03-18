@@ -1,1 +1,14 @@
+# macOS
+.DS_Store
+
+# binary
+mykola-1-bot
+
+# toml
 config.toml
+
+# logs
+*.log
+
+# VS Code
+.vscode/
