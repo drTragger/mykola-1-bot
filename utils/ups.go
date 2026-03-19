@@ -54,6 +54,10 @@ const (
 	minChargeCurrentMA = 100
 	upsCacheTTL        = 5 * time.Second
 	i2cTimeoutSec      = 2
+
+	i2cReadRetries    = 3
+	i2cRetryDelay     = 150 * time.Millisecond
+	i2cRecoverTimeout = 2
 )
 
 type UpsSnapshot struct {
@@ -109,55 +113,55 @@ func readUpsSnapshotRaw() (*UpsSnapshot, error) {
 	var err error
 
 	if s.CommState, err = readReg8(regCommState); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("не вдалося прочитати COMM state: %w", err)
 	}
 	if s.ChargeState, err = readReg8(regChargeState); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("не вдалося прочитати CHARGE state: %w", err)
 	}
 
 	if s.VBUSVoltageMV, err = readU16LE(regVBUSVoltageLo, regVBUSVoltageHi); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("не вдалося прочитати VBUS voltage: %w", err)
 	}
 	if s.VBUSCurrentMA, err = readU16LE(regVBUSCurrentLo, regVBUSCurrentHi); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("не вдалося прочитати VBUS current: %w", err)
 	}
 	if s.VBUSPowerMW, err = readU16LE(regVBUSPowerLo, regVBUSPowerHi); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("не вдалося прочитати VBUS power: %w", err)
 	}
 
 	if s.BatteryVoltageMV, err = readU16LE(regBatteryVoltageLo, regBatteryVoltageHi); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("не вдалося прочитати battery voltage: %w", err)
 	}
 	if s.BatteryCurrentMA, err = readS16LE(regBatteryCurrentLo, regBatteryCurrentHi); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("не вдалося прочитати battery current: %w", err)
 	}
 	if s.BatteryPercent, err = readU16LE(regBatteryPercentLo, regBatteryPercentHi); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("не вдалося прочитати battery percent: %w", err)
 	}
 	if s.RemainingMAh, err = readU16LE(regRemainCapLo, regRemainCapHi); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("не вдалося прочитати remaining capacity: %w", err)
 	}
 	if s.RemainDisMin, err = readU16LE(regRemainDisLo, regRemainDisHi); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("не вдалося прочитати remaining discharge time: %w", err)
 	}
 	if s.RemainChgMin, err = readU16LE(regRemainChgLo, regRemainChgHi); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("не вдалося прочитати remaining charge time: %w", err)
 	}
 	if s.FullCapacityMAh, err = readU16LE(regFullCapLo, regFullCapHi); err != nil {
 		s.FullCapacityMAh = 0
 	}
 
 	if s.Cell1MV, err = readU16LE(regCell1Lo, regCell1Hi); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("не вдалося прочитати cell1: %w", err)
 	}
 	if s.Cell2MV, err = readU16LE(regCell2Lo, regCell2Hi); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("не вдалося прочитати cell2: %w", err)
 	}
 	if s.Cell3MV, err = readU16LE(regCell3Lo, regCell3Hi); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("не вдалося прочитати cell3: %w", err)
 	}
 	if s.Cell4MV, err = readU16LE(regCell4Lo, regCell4Hi); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("не вдалося прочитати cell4: %w", err)
 	}
 
 	if s.FirmwareVersion, err = readReg8(regFirmwareVersion); err != nil {
@@ -446,6 +450,29 @@ func GetUpsStatus() string {
 }
 
 func readReg8(reg string) (int, error) {
+	var lastErr error
+
+	for attempt := 1; attempt <= i2cReadRetries; attempt++ {
+		n, err := readReg8Once(reg)
+		if err == nil {
+			return n, nil
+		}
+
+		lastErr = err
+
+		if attempt == 1 {
+			recoverI2CBus()
+		}
+
+		if attempt < i2cReadRetries {
+			time.Sleep(i2cRetryDelay)
+		}
+	}
+
+	return 0, fmt.Errorf("read reg %s failed after %d attempts: %w", reg, i2cReadRetries, lastErr)
+}
+
+func readReg8Once(reg string) (int, error) {
 	cmd := exec.Command(
 		"timeout",
 		strconv.Itoa(i2cTimeoutSec),
@@ -455,6 +482,7 @@ func readReg8(reg string) (int, error) {
 		upsI2CAddr,
 		reg,
 	)
+
 	out, err := cmd.Output()
 	if err != nil {
 		return 0, err
@@ -463,10 +491,21 @@ func readReg8(reg string) (int, error) {
 	val := strings.TrimSpace(string(out))
 	n, err := strconv.ParseInt(strings.TrimPrefix(val, "0x"), 16, 32)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("parse %q: %w", val, err)
 	}
 
 	return int(n), nil
+}
+
+func recoverI2CBus() {
+	cmd := exec.Command(
+		"timeout",
+		strconv.Itoa(i2cRecoverTimeout),
+		"i2cdetect",
+		"-y",
+		strconv.Itoa(upsI2CBus),
+	)
+	_ = cmd.Run()
 }
 
 func readU16LE(lo, hi string) (int, error) {
