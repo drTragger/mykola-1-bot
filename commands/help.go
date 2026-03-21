@@ -15,6 +15,9 @@ func helpText() string {
 		"• `/metrics` — Повні метрики системи: CPU, RAM, ZRAM/SWAP, SSD, температура, мережа, Raspberry Pi health, сервіси та UPS.\n" +
 		"• `/simple` — Спрощені метрики системи.\n" +
 
+		"*🔐 VPN*\n" +
+		"• `/vpn` — Детальна інформація про VPN (WireGuard): статус, handshake, трафік, routing, привʼязка qBittorrent.\n\n" +
+
 		"*🎬 Торент*\n" +
 		"• `/torrents` — Список торрентів у qBittorrent: статус, прогрес, швидкість завантаження та віддачі.\n\n" +
 
