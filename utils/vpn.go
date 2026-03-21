@@ -2,7 +2,6 @@ package utils
 
 import (
 	"fmt"
-	"os"
 	"os/user"
 	"strconv"
 	"strings"
@@ -54,7 +53,7 @@ func getWGInterfaceIP() string {
 }
 
 func getWGDumpData() (endpoint, handshakeAgo, rx, tx string) {
-	out, err := runCommand(2, "wg", "show", "wg0", "dump")
+	out, err := runSudoCommand(2, "wg", "show", "wg0", "dump")
 	if err != nil || out == "" {
 		return "н/д", "н/д", "н/д", "н/д"
 	}
@@ -164,27 +163,24 @@ func getQBittorrentConfigPaths() []string {
 }
 
 func getQBittorrentInterfaceBinding() string {
-	for _, path := range getQBittorrentConfigPaths() {
-		data, err := os.ReadFile(path)
-		if err != nil {
-			continue
-		}
+	data := readQBittorrentConfig()
+	if data == "" {
+		return "н/д"
+	}
 
-		lines := strings.Split(string(data), "\n")
-		for _, line := range lines {
-			line = strings.TrimSpace(line)
+	lines := strings.Split(data, "\n")
+	keys := []string{
+		"Connection\\Interface=",
+		"Connection\\InterfaceName=",
+		"Session\\Interface=",
+		"Session\\InterfaceName=",
+	}
 
-			keys := []string{
-				"Connection\\Interface=",
-				"Connection\\InterfaceName=",
-				"Session\\Interface=",
-				"Session\\InterfaceName=",
-			}
-
-			for _, key := range keys {
-				if strings.HasPrefix(line, key) {
-					return strings.TrimPrefix(line, key)
-				}
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		for _, key := range keys {
+			if strings.HasPrefix(line, key) {
+				return strings.TrimSpace(strings.TrimPrefix(line, key))
 			}
 		}
 	}
@@ -193,39 +189,51 @@ func getQBittorrentInterfaceBinding() string {
 }
 
 func getQBittorrentWebUIAddress() string {
-	for _, path := range getQBittorrentConfigPaths() {
-		data, err := os.ReadFile(path)
-		if err != nil {
-			continue
-		}
-
-		lines := strings.Split(string(data), "\n")
-		var address string
-		var port string
-
-		for _, line := range lines {
-			line = strings.TrimSpace(line)
-
-			if strings.HasPrefix(line, "WebUI\\Address=") {
-				address = strings.TrimPrefix(line, "WebUI\\Address=")
-			}
-
-			if strings.HasPrefix(line, "WebUI\\Port=") {
-				port = strings.TrimPrefix(line, "WebUI\\Port=")
-			}
-		}
-
-		if address == "" {
-			address = "0.0.0.0"
-		}
-		if port == "" {
-			port = "8080"
-		}
-
-		return fmt.Sprintf("%s:%s", address, port)
+	data := readQBittorrentConfig()
+	if data == "" {
+		return "н/д"
 	}
 
-	return "н/д"
+	lines := strings.Split(data, "\n")
+	address := "0.0.0.0"
+	port := "8080"
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+
+		if strings.HasPrefix(line, "WebUI\\Address=") {
+			address = strings.TrimSpace(strings.TrimPrefix(line, "WebUI\\Address="))
+		}
+
+		if strings.HasPrefix(line, "WebUI\\Port=") {
+			port = strings.TrimSpace(strings.TrimPrefix(line, "WebUI\\Port="))
+		}
+	}
+
+	return fmt.Sprintf("%s:%s", address, port)
+}
+
+func runSudoCommand(timeoutSec int, cmd string, args ...string) (string, error) {
+	allArgs := append([]string{"-n", cmd}, args...)
+	return runCommand(timeoutSec, "sudo", allArgs...)
+}
+
+func readQBittorrentConfig() string {
+	paths := []string{
+		"/home/qbittorrent/.config/qBittorrent/qBittorrent.conf",
+		"/home/qbittorrent/.local/share/qBittorrent/qBittorrent.conf",
+		"/home/qbittorrent/.config/qBittorrent/config/qBittorrent.conf",
+		"/home/qbittorrent/.config/qBittorrent/qBittorrent-data.conf",
+	}
+
+	for _, path := range paths {
+		out, err := runSudoCommand(2, "cat", path)
+		if err == nil && strings.TrimSpace(out) != "" {
+			return out
+		}
+	}
+
+	return ""
 }
 
 func GetVPNSummaryShort() string {
