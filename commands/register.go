@@ -11,6 +11,7 @@ var registry = map[string]func(*tgbotapi.BotAPI, *tgbotapi.Message){
 	"/metrics":  MetricsCommand,
 	"/simple":   SimpleMetricsCommand,
 	"/torrents": TorrentsCommand,
+	"/vpn":      VpnCommand,
 	"/reboot":   RebootCommand,
 	"/shutdown": ShutdownCommand,
 	"/update":   UpdateCommand,

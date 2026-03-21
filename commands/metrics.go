@@ -8,9 +8,10 @@ import (
 
 func MetricsCommand(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 	sysMetrics := utils.GetSystemMetrics()
+	vpnSummary := utils.GetVPNSummaryShort()
 	upsMetrics := utils.GetUpsStatus()
 
-	reply := tgbotapi.NewMessage(msg.Chat.ID, sysMetrics+"\n\n"+upsMetrics)
+	reply := tgbotapi.NewMessage(msg.Chat.ID, sysMetrics+"\n\n"+vpnSummary+"\n\n"+upsMetrics)
 	reply.ParseMode = "Markdown"
 	bot.Send(reply)
 }
